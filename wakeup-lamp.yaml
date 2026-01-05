@@ -1,0 +1,115 @@
+esphome:
+  name: wakeup-lamp
+  friendly_name: wakeup_lamp
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+i2s_audio:
+    i2s_lrclk_pin: GPIO7
+    i2s_bclk_pin: GPIO8
+    
+media_player:
+  - platform: i2s_audio
+    name: ESPHome I2S Media Player
+    dac_type: external
+    i2s_dout_pin: GPIO9
+    mode: mono
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "s0DpQzjOVz87B7i3HGyvH2Gg6ATCyfYda/vmz9MqprM="
+
+ota:
+  - platform: esphome
+    password: "fe5b5b3c9d29be0c4f4e63a33f6f2960"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Wakeup-Lamp Fallback Hotspot"
+    password: "mA7cKJQrrIr5"
+
+captive_portal:
+  
+
+number:
+  platform: template
+  name: "Wakeup Minutes"
+  min_value: 1
+  max_value: 45
+  step: 1
+  optimistic: True
+  id: wakeup_minutes
+
+
+i2c:
+  sda: GPIO5
+  scl: GPIO6
+  sda_pullup_enabled: True
+  scl_pullup_enabled: True
+  scan: False
+  id: i2c_bus1
+
+
+interval:
+  - interval: 1s
+    then: 
+      - lambda: |-
+          // Syntax: id(bus_id).write(address, data_array, length);
+          uint8_t data[] = {0x00, 0x05};
+          id(i2c_bus1).write(0x51, data, 2);
+
+output:
+  - platform: slow_pwm
+    pin: GPIO2
+    id: my_slow_pwm
+    period: 1s
+    
+  - platform: template
+    id: manual_light_control
+    type: float
+    write_action:
+      - lambda: |-
+          uint8_t cmd[2] = {0x00, 0x02};
+          uint8_t data[3] = {(uint8_t) (state * 255), 0x00, 0xAA};
+
+          id(i2c_bus1).write(0x51, cmd, 2);
+          id(i2c_bus1).write(0x51, cmd, 0);
+          id(i2c_bus1).write(0x51, data, 3);
+          id(my_slow_pwm).set_level(state);
+  - platform: template
+    id: wakeup_toggle
+    type: binary
+    write_action: 
+      - lambda: |- 
+          uint8_t cmd[2] = {0x00, 0x02};
+          uint8_t data[3] = {(uint8_t) 0x3, 0x2, 0xAA};
+
+          id(i2c_bus1).write(0x51, cmd, 2);
+          id(i2c_bus1).write(0x51, cmd, 0);
+          id(i2c_bus1).write(0x51, data, 3);
+
+
+
+
+light:
+  - platform: monochromatic
+    name: "Light!"
+    output: manual_light_control
+  - platform: binary
+    name: "Wakeup"
+    output: wakeup_toggle
